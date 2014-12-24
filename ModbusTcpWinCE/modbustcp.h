@@ -18,49 +18,26 @@
  *
  * File: $Id: demo.cpp,v 1.2 2006/06/26 19:24:07 wolti Exp $
  */
-
+#pragma once
 #include "stdafx.h"
 
 /* ----------------------- Modbus includes ----------------------------------*/
 #include "mb.h"
 #include "mbport.h"
-#include "mbutils.h"
 
 /* ----------------------- Defines ------------------------------------------*/
 #define PROG            _T("freemodbus")
 
-//////////////////////////////////////////////////////////////////////////
-//		Modbus Slave
-//////////////////////////////////////////////////////////////////////////
-// 04 Read Input Registers
 #define REG_INPUT_START 1000
-#define REG_INPUT_NREGS 100
-
-// 03 Read Holding Registers
+#define REG_INPUT_NREGS 4
 #define REG_HOLDING_START 100
 #define REG_HOLDING_NREGS 100
 
-// 02 Read Input Status
-#define INPUT_STATUS_START	300
-#define INPUT_STATUS_NREGS	100
-
-// 01 Read Coil Status
-#define INPUT_COIL_START	500
-#define INPUT_COIL_NREGS	100
-//////////////////////////////////////////////////////////////////////////
 /* ----------------------- Static variables ---------------------------------*/
 static USHORT   usRegInputStart = REG_INPUT_START;
 static USHORT   usRegInputBuf[REG_INPUT_NREGS];
-
 static USHORT   usRegHoldingStart = REG_HOLDING_START;
 static USHORT   usRegHoldingBuf[REG_HOLDING_NREGS];
-
-static USHORT   usInputStatusStart = INPUT_STATUS_START;
-static UCHAR	ucInputStatusBuf[INPUT_STATUS_NREGS];
-
-static USHORT   usInputCoilStart = INPUT_COIL_START;
-static UCHAR	ucInputCoilBuf[INPUT_COIL_NREGS];
-
 
 static HANDLE   hPollThread;
 static CRITICAL_SECTION hPollLock;
@@ -76,36 +53,14 @@ static BOOL     bCreatePollingThread( void );
 static enum ThreadState eGetPollingThreadState( void );
 static void     eSetPollingThreadState( enum ThreadState eNewState );
 static DWORD WINAPI dwPollingThread( LPVOID lpParameter );
-
+int StartModbusTcp();
+void StopModbusTcp();
 /* ----------------------- Start implementation -----------------------------*/
-int
-_tmain( int argc, _TCHAR * argv[] )
+int StartModbusTcp()
 {
     int             iExitCode;
     TCHAR           cCh;
     BOOL            bDoExit;
-	for (int Num = REG_INPUT_NREGS; Num >= 0; Num--)
-	{
-		usRegInputBuf[Num] = Num;
-	}
-
-	for (int Num = INPUT_STATUS_NREGS; Num >= 0; Num--)
-	{
-		ucInputStatusBuf[Num] = 1;
-	}
-	ucInputStatusBuf[0] = 255;
-
-	for (int Num = 0; Num < REG_HOLDING_NREGS; Num++)
-	{
-		usRegHoldingBuf[Num] = Num;
-	}
-
-	for (int Num = 0; Num < INPUT_COIL_NREGS; Num++)
-	{
-		ucInputCoilBuf[Num] = 0;
-	}
-	ucInputCoilBuf[0] = 255;
-
     if( eMBTCPInit( MB_TCP_PORT_USE_DEFAULT ) != MB_ENOERR )
     {
         _ftprintf( stderr, _T( "%s: can't initialize modbus stack!\r\n" ), PROG );
@@ -119,72 +74,21 @@ _tmain( int argc, _TCHAR * argv[] )
         InitializeCriticalSection( &hPollLock );
         eSetPollingThreadState( STOPPED );
 
-        /* CLI interface. */
-        _tprintf( _T( "Type 'q' for quit or 'h' for help!\r\n" ) );
-        bDoExit = FALSE;
-        do
-        {
-            _tprintf( _T( "> " ) );
-            cCh = _gettchar(  );
-            switch ( cCh )
-            {
-            case _TCHAR( 'q' ):
-                bDoExit = TRUE;
-                break;
-            case _TCHAR( 'd' ):
-                eSetPollingThreadState( SHUTDOWN );
-                break;
-            case _TCHAR( 'e' ):
-                if( bCreatePollingThread(  ) != TRUE )
-                {
-                    _tprintf( _T( "Can't start protocol stack! Already running?\r\n" ) );
-                }
-                break;
-            case _TCHAR( 's' ):
-                switch ( eGetPollingThreadState(  ) )
-                {
-                case RUNNING:
-                    _tprintf( _T( "Protocol stack is running.\r\n" ) );
-                    break;
-                case STOPPED:
-                    _tprintf( _T( "Protocol stack is stopped.\r\n" ) );
-                    break;
-                case SHUTDOWN:
-                    _tprintf( _T( "Protocol stack is shuting down.\r\n" ) );
-                    break;
-                }
-                break;
-            case _TCHAR( 'h' ):
-                _tprintf( _T( "FreeModbus demo application help:\r\n" ) );
-                _tprintf( _T( "  'd' ... disable protocol stack.\r\n" ) );
-                _tprintf( _T( "  'e' ... enabled the protocol stack\r\n" ) );
-                _tprintf( _T( "  's' ... show current status\r\n" ) );
-                _tprintf( _T( "  'q' ... quit applicationr\r\n" ) );
-                _tprintf( _T( "  'h' ... this information\r\n" ) );
-                _tprintf( _T( "\r\n" ) );
-                _tprintf( _T( "Copyright 2006 Christian Walter <wolti@sil.at>\r\n" ) );
-                break;
-            default:
-                if( cCh != _TCHAR('\n') )
-                {
-                    _tprintf( _T( "illegal command '%c'!\r\n" ), cCh );
-                }
-                break;
-            }
-
-            /* eat up everything untill return character. */
-            while( cCh != '\n' )
-            {
-                cCh = _gettchar(  );
-            }
-        }
-        while( !bDoExit );
-
-        /* Release hardware resources. */
-        ( void )eMBClose(  );
+        /* Start the modbus protocol. */
+		if( bCreatePollingThread(  ) != TRUE )
+		{
+			_tprintf( _T( "Can't start protocol stack! Already running?\r\n" ) );
+		}
         iExitCode = EXIT_SUCCESS;
     }
     return iExitCode;
+}
+
+void StopModbusTcp()
+{
+	eSetPollingThreadState( SHUTDOWN );
+	/* Release hardware resources. */
+	( void )eMBClose(  );
 }
 
 BOOL
@@ -326,70 +230,11 @@ eMBRegHoldingCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs, eMBRegi
 eMBErrorCode
 eMBRegCoilsCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNCoils, eMBRegisterMode eMode )
 {
-	eMBErrorCode    eStatus = MB_ENOERR;
-	int             iRegIndex;
-	SHORT			iNCoils;
-	iNCoils = (SHORT) usNCoils;
-
-	if( ( usAddress >= INPUT_COIL_START ) &&
-		( usAddress + iNCoils <= INPUT_COIL_START + INPUT_COIL_NREGS ) )
-	{
-		iRegIndex = ( int )( usAddress - usInputCoilStart );
-		switch ( eMode )
-		{
-			/* Pass current register values to the protocol stack. */
-		case MB_REG_READ:
-			while( iNCoils > 0 )
-			{
-				*pucRegBuffer++ = xMBUtilGetBits( ucInputCoilBuf, iRegIndex, ( iNCoils > 8 ? 8 : iNCoils ));
-				iRegIndex += 8;
-				iNCoils -= 8;
-			}
-			break;
-
-			/* Update current register values with new values from the
-			 * protocol stack. */
-		case MB_REG_WRITE:
-			while( iNCoils > 0 )
-			{
-				xMBUtilSetBits( ucInputCoilBuf, iRegIndex, ( iNCoils > 8 ? 8 : iNCoils ), *pucRegBuffer++);
-				iRegIndex += 8;
-				iNCoils -= 8;
-			}
-		}
-	}
-	else
-	{
-		eStatus = MB_ENOREG;
-    }
-
-	return eStatus;
+    return MB_ENOREG;
 }
 
 eMBErrorCode
 eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
 {
-	eMBErrorCode    eStatus = MB_ENOERR;
-	USHORT          iRegIndex;
-	int				iNDiscrete;
-
-	iNDiscrete = (int)usNDiscrete;
-
-	if( ( usAddress >= INPUT_STATUS_START )
-		&& ( usAddress + iNDiscrete <= INPUT_STATUS_START + INPUT_STATUS_NREGS ) )
-	{
-		iRegIndex = ( USHORT )( usAddress - usInputStatusStart );
-		while( iNDiscrete > 0 )
-		{
-			*pucRegBuffer++ = xMBUtilGetBits( ucInputStatusBuf, iRegIndex, ( iNDiscrete > 8 ? 8 : iNDiscrete ));
-			iRegIndex += 8;
-			iNDiscrete -= 8;
-		}
-	}
-	else
-	{
-		eStatus = MB_ENOREG;
-	}
-
-	return eStatus;
+    return MB_ENOREG;
 }
